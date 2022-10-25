@@ -4,10 +4,10 @@ pragma solidity ^0.8.4;
 
 interface IERC3525MetadataDescriptor {
 
-    function constructContractURI() external view returns (string memory);
+  function constructContractURI() external view returns (string memory);
 
-    function constructSlotURI(uint256 slot) external view returns (string memory);
-    
-    function constructTokenURI(uint256 tokenId) external view returns (string memory);
+  function constructSlotURI(uint256 slot) external view returns (string memory);
+  
+  function constructTokenURI(uint256 tokenId) external view returns (string memory);
 
 }
