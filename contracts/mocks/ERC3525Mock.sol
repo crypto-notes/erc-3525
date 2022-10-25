@@ -1,10 +1,12 @@
 //SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.17;
 
-import "@openzeppelin/contracts/utils/Strings.sol";
-import "../ERC3525Upgradeable.sol";
-import "../utils/StringConvertor.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
+import {ERC3525Upgradeable} from "../ERC3525Upgradeable.sol";
+import {StringConvertor} from "../utils/StringConvertor.sol";
+import {IERC3525Metadata} from "../extensions/IERC3525Metadata.sol";
 
 contract ERC3525Mock is ERC3525Upgradeable {
 
@@ -14,6 +16,9 @@ contract ERC3525Mock is ERC3525Upgradeable {
      * @notice Properties of the slot, which determine the value of slot.
      */
     struct SlotDetail {
+        string name;
+        string description;
+        string image;
         address underlying;
         uint8 vestingType;
         uint32 maturity;
@@ -28,11 +33,13 @@ contract ERC3525Mock is ERC3525Upgradeable {
         string memory symbol_,
         uint8 decimals_
     ) public initializer {
-        ERC3525Upgradeable.__ERC3525_init(name_, symbol_, decimals_);
+        __ERC3525_init(name_, symbol_, decimals_);
     }
 
     function mint(
-        address minter_,
+        string memory slotName_,
+        string memory slotDescription_,
+        string memory slotImage_,
         address underlying_,
         uint8 vestingType_,
         uint32 maturity_,
@@ -41,23 +48,20 @@ contract ERC3525Mock is ERC3525Upgradeable {
     ) public {
         uint256 slot = _getSlot(underlying_, vestingType_, maturity_, term_);
         _slotDetails[slot] = SlotDetail({
+            name: slotName_,
+            description: slotDescription_,
+            image: slotImage_,
             underlying: underlying_,
             vestingType: vestingType_,
             maturity: maturity_,
             term: term_
         });
         
-        ERC3525Upgradeable._mintValue(minter_, slot, value_);
+        _mintValue(_msgSender(), slot, value_);
     }
 
-    function getSlotDetail(uint256 slot_) public view returns (address, uint8, uint32, uint32) {
-        SlotDetail storage slotDetail = _slotDetails[slot_];
-        return (
-            slotDetail.underlying, 
-            slotDetail.vestingType, 
-            slotDetail.maturity, 
-            slotDetail.term
-        );
+    function getSlotDetail(uint256 slot_) public view returns (SlotDetail memory) {
+        return _slotDetails[slot_];
     }
 
     /**
@@ -69,7 +73,7 @@ contract ERC3525Mock is ERC3525Upgradeable {
         uint8 vestingType_,
         uint32 maturity_,
         uint32 term_
-    ) internal pure virtual returns (uint256 slot_) {
+    ) internal pure virtual returns (uint256) {
         return 
             uint256(
                 keccak256(
@@ -116,11 +120,11 @@ contract ERC3525Mock is ERC3525Upgradeable {
                     Base64.encode(
                         abi.encodePacked(
                             '{"name":"', 
-                            _slotName(slot_),
+                            _slotDetails[slot_].name,
                             '","description":"',
-                            _slotDescription(slot_),
+                            _slotDetails[slot_].description,
                             '","image":"',
-                            _slotImage(slot_),
+                            _slotDetails[slot_].image,
                             '","properties":',
                             _slotProperties(slot_),
                             '}'
@@ -167,57 +171,50 @@ contract ERC3525Mock is ERC3525Upgradeable {
         return "";
     }
 
-    function _slotName(uint256 slot_) internal view virtual returns (string memory) {
-        slot_;
-        return "";
-    }
-
-    function _slotDescription(uint256 slot_) internal view virtual returns (string memory) {
-        slot_;
-        return "";
-    }
-
-    function _slotImage(uint256 slot_) internal view virtual returns (bytes memory) {
-        slot_;
-        return "";
-    }
-
     function _slotProperties(uint256 slot_) internal view returns (string memory) {
-        SlotDetail storage slotDetail = _slotDetails[slot_];
+        SlotDetail memory slotDetail = _slotDetails[slot_];
         return 
             string(
                 /* solhint-disable */
                 abi.encodePacked(
-                    '[',
-                        abi.encodePacked(
-                            '{"name":"underlying",',
-                            '"description":"Address of the underlying token locked in this contract.",',
-                            '"value":"', Strings.toHexString(uint256(uint160(slotDetail.underlying))), '",',
-                            '"order":1,', 
-                            '"display_type":"string"},'
-                        ),
-                        abi.encodePacked(
-                            '{"name":"vesting_type",',
-                            '"description":"Vesting type that represents the releasing mode of underlying assets.",',
-                            '"value":', uint256(slotDetail.vestingType).toString(), ',',
-                            '"order":2,', 
-                            '"display_type":"number"},'
-                        ),
-                        abi.encodePacked(
-                            '{"name":"maturity",',
-                            '"description":"Maturity that all underlying assets would be completely released.",',
-                            '"value":', uint256(slotDetail.maturity).toString(), ',',
-                            '"order":3,', 
-                            '"display_type":"date"},'
-                        ),
-                        abi.encodePacked(
-                            '{"name":"term",',
-                            '"description":"The length of the locking period (in seconds)",',
-                            '"value":', uint256(slotDetail.term).toString(), ',',
-                            '"order":4,', 
-                            '"display_type":"number"}'
-                        ),
-                    ']'
+                    "[",
+                    abi.encodePacked(
+                        '{"name":"underlying",',
+                        '"description":"Address of the underlying token locked in this contract.",',
+                        '"value":"',
+                            Strings.toHexString(uint256(uint160(slotDetail.underlying))),
+                        '",',
+                        '"order":1,',
+                        '"display_type":"string"},'
+                    ),
+                    abi.encodePacked(
+                        '{"name":"vesting_type",',
+                        '"description":"Vesting type that represents the releasing mode of underlying assets.",',
+                        '"value":',
+                            uint256(slotDetail.vestingType).toString(),
+                        ",",
+                        '"order":2,',
+                        '"display_type":"number"},'
+                    ),
+                    abi.encodePacked(
+                        '{"name":"maturity",',
+                        '"description":"Maturity that all underlying assets would be completely released.",',
+                        '"value":',
+                            uint256(slotDetail.maturity).toString(),
+                        ",",
+                        '"order":3,',
+                        '"display_type":"date"},'
+                    ),
+                    abi.encodePacked(
+                        '{"name":"term",',
+                        '"description":"The length of the locking period (in seconds)",',
+                        '"value":',
+                            uint256(slotDetail.term).toString(),
+                        ",",
+                        '"order":4,',
+                        '"display_type":"number"}'
+                    ),
+                    "]"
                 )
                 /* solhint-enable */
             );
@@ -228,7 +225,7 @@ contract ERC3525Mock is ERC3525Upgradeable {
         return 
             string(
                 abi.encodePacked(
-                    IERC3525Metadata(msg.sender).name(), 
+                    IERC3525Metadata(_msgSender()).name(), 
                     " #", tokenId_.toString()
                 )
             );
