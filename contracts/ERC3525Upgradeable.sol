@@ -324,6 +324,22 @@ abstract contract ERC3525Upgradeable is
     return tokenId_;
   }
 
+  function _topupValue(address to_, uint256 slot_, uint256 tokenId_, uint256 value_) internal virtual returns (uint256) {
+    require(to_ != address(0), "ERC3525: top-up to the zero address");
+    require(tokenId_ != 0, "ERC3525: cannot top-up to zero tokenId");
+    require(_exists(tokenId_), "ERC3525: cannot top-up to nonexistent token");
+
+    _beforeValueTransfer(address(0), to_, 0, tokenId_, slot_, value_);
+
+    _allTokens[_allTokensIndex[tokenId_]].balance = value_;
+
+    emit TransferValue(0, tokenId_, value_);
+
+    _afterValueTransfer(address(0), to_, 0, tokenId_, slot_, value_);
+
+    return tokenId_;
+  }
+
   function _mint(address to_, uint256 tokenId_, uint256 slot_) private {
     TokenData memory tokenData = TokenData({
       id: tokenId_,

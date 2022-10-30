@@ -1,6 +1,6 @@
 {
   "name": "@cryptonotes/core",
-  "version": "0.9.1",
+  "version": "0.9.3",
   "description": "ERC-3525 Reference Implementation",
   "license": "MIT",
   "files": [
@@ -20,7 +20,8 @@
   },
   "contributors": [
     "Ethan Y. Tsai <yee.tsai@gmail.com>",
-    "Alvis Du <alvis@solv.finance>"
+    "Alvis Du <alvis@solv.finance>",
+    "Victor Z.T. Feng <nftvictor@gmail.com>"
   ],
   "scripts": {
     "compile": "hardhat compile",
