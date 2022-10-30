@@ -1,6 +1,6 @@
 {
   "name": "@cryptonotes/core",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "ERC-3525 Reference Implementation",
   "license": "MIT",
   "files": [
