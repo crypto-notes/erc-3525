@@ -51,6 +51,7 @@ abstract contract ERC3525Upgradeable is
   mapping(uint256 => mapping(address => uint256)) private _approvedValues;
 
   TokenData[] private _allTokens;
+  uint256 private _tokenId;
 
   // key: id
   mapping(uint256 => uint256) private _allTokensIndex;
@@ -634,8 +635,8 @@ abstract contract ERC3525Upgradeable is
     return _createDefaultTokenId();
   }
 
-  function _createDefaultTokenId() private view returns (uint256) {
-    return totalSupply() + 1;
+  function _createDefaultTokenId() private returns (uint256) {
+    return ++_tokenId;
   }
 
   /**
