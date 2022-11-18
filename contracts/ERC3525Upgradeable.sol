@@ -1,7 +1,8 @@
-//SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.0;
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC721/IERC721Upgradeable.sol";
@@ -15,11 +16,12 @@ import "./IERC3525Receiver.sol";
 import "./extensions/IERC3525Metadata.sol";
 import "./periphery/interface/IERC3525MetadataDescriptor.sol";
 
-abstract contract ERC3525Upgradeable is
+contract ERC3525Upgradeable is
+  Initializable,
+  ContextUpgradeable,
   IERC3525Metadata,
-  IERC721EnumerableUpgradeable,
   ERC165Upgradeable,
-  ContextUpgradeable
+  IERC721EnumerableUpgradeable
 {
   using StringsUpgradeable for address;
   using StringsUpgradeable for uint256;
@@ -51,7 +53,6 @@ abstract contract ERC3525Upgradeable is
   mapping(uint256 => mapping(address => uint256)) private _approvedValues;
 
   TokenData[] private _allTokens;
-  uint256 private _tokenId;
 
   // key: id
   mapping(uint256 => uint256) private _allTokensIndex;
@@ -74,48 +75,48 @@ abstract contract ERC3525Upgradeable is
 
   function supportsInterface(bytes4 interfaceId) public view virtual override(IERC165Upgradeable, ERC165Upgradeable) returns (bool) {
     return
+      interfaceId == type(IERC165Upgradeable).interfaceId ||
       interfaceId == type(IERC3525).interfaceId ||
       interfaceId == type(IERC721Upgradeable).interfaceId ||
       interfaceId == type(IERC3525Metadata).interfaceId ||
-      interfaceId == type(IERC721EnumerableUpgradeable).interfaceId ||
-      super.supportsInterface(interfaceId);
+      interfaceId == type(IERC721EnumerableUpgradeable).interfaceId || 
+      interfaceId == type(IERC721MetadataUpgradeable).interfaceId;
   }
 
   /**
-  * @dev Returns the token collection name.
-  */
+   * @dev Returns the token collection name.
+   */
   function name() public view virtual override returns (string memory) {
     return _name;
   }
 
   /**
-  * @dev Returns the token collection symbol.
-  */
+   * @dev Returns the token collection symbol.
+   */
   function symbol() public view virtual override returns (string memory) {
     return _symbol;
   }
 
   /**
-  * @dev Returns the number of decimals the token uses for value.
-  */
+   * @dev Returns the number of decimals the token uses for value.
+   */
   function valueDecimals() public view virtual override returns (uint8) {
     return _decimals;
   }
 
   function balanceOf(uint256 tokenId_) public view virtual override returns (uint256) {
-    require(_exists(tokenId_), "ERC3525: balance query for nonexistent token");
+    _requireMinted(tokenId_);
     return _allTokens[_allTokensIndex[tokenId_]].balance;
   }
 
-  // ERC721 Compatible
   function ownerOf(uint256 tokenId_) public view virtual override returns (address owner_) {
-    require(_exists(tokenId_), "ERC3525: owner query for nonexistent token");
+    _requireMinted(tokenId_);
     owner_ = _allTokens[_allTokensIndex[tokenId_]].owner;
-    require(owner_ != address(0), "ERC3525: owner query for nonexistent token");
+    require(owner_ != address(0), "ERC3525: invalid token ID");
   }
 
   function slotOf(uint256 tokenId_) public view virtual override returns (uint256) {
-    require(_exists(tokenId_), "ERC3525: slot query for nonexistent token");
+    _requireMinted(tokenId_);
     return _allTokens[_allTokensIndex[tokenId_]].slot;
   }
 
@@ -144,9 +145,10 @@ abstract contract ERC3525Upgradeable is
   }
 
   /**
-  * @dev Returns the Uniform Resource Identifier (URI) for `tokenId` token.
-  */
+   * @dev Returns the Uniform Resource Identifier (URI) for `tokenId` token.
+   */
   function tokenURI(uint256 tokenId_) public view virtual override returns (string memory) {
+    _requireMinted(tokenId_);
     string memory baseURI = _baseURI();
     return 
       address(metadataDescriptor) != address(0) ? 
@@ -169,6 +171,7 @@ abstract contract ERC3525Upgradeable is
   }
 
   function allowance(uint256 tokenId_, address operator_) public view virtual override returns (uint256) {
+    _requireMinted(tokenId_);
     return _approvedValues[tokenId_][operator_];
   }
 
@@ -180,7 +183,7 @@ abstract contract ERC3525Upgradeable is
     _spendAllowance(_msgSender(), fromTokenId_, value_);
 
     uint256 newTokenId = _createDerivedTokenId(fromTokenId_);
-    _mintValue(to_, ERC3525Upgradeable.slotOf(fromTokenId_), newTokenId, 0);
+    _mint(to_, newTokenId, ERC3525Upgradeable.slotOf(fromTokenId_), 0);
     _transferValue(fromTokenId_, newTokenId, value_);
 
     return newTokenId;
@@ -192,7 +195,6 @@ abstract contract ERC3525Upgradeable is
     uint256 value_
   ) public payable virtual override {
     _spendAllowance(_msgSender(), fromTokenId_, value_);
-
     _transferValue(fromTokenId_, toTokenId_, value_);
   }
 
@@ -207,7 +209,6 @@ abstract contract ERC3525Upgradeable is
     uint256 tokenId_
   ) public virtual override {
     require(_isApprovedOrOwner(_msgSender(), tokenId_), "ERC3525: transfer caller is not owner nor approved");
-
     _transferTokenId(from_, to_, tokenId_);
   }
 
@@ -242,8 +243,7 @@ abstract contract ERC3525Upgradeable is
   }
 
   function getApproved(uint256 tokenId_) public view virtual override returns (address) {
-    require(_exists(tokenId_), "ERC3525: approved query for nonexistent token");
-
+    _requireMinted(tokenId_);
     return _allTokens[_allTokensIndex[tokenId_]].approved;
   }
 
@@ -282,12 +282,12 @@ abstract contract ERC3525Upgradeable is
   }
 
   function _isApprovedOrOwner(address operator_, uint256 tokenId_) internal view virtual returns (bool) {
-    require(_exists(tokenId_), "ERC3525: operator query for nonexistent token");
+    _requireMinted(tokenId_);
     address owner = ERC3525Upgradeable.ownerOf(tokenId_);
     return (
       operator_ == owner ||
       ERC3525Upgradeable.isApprovedForAll(owner, operator_) ||
-      getApproved(tokenId_) == operator_
+      ERC3525Upgradeable.getApproved(tokenId_) == operator_
     );
   }
 
@@ -303,45 +303,43 @@ abstract contract ERC3525Upgradeable is
     return _allTokens.length != 0 && _allTokens[_allTokensIndex[tokenId_]].id == tokenId_;
   }
 
-  function _mintValue(address to_, uint256 slot_, uint256 value_) internal virtual returns (uint256) {
-    uint256 tokenId = _createOriginalTokenId();
-    return _mintValue(to_, slot_, tokenId, value_);
+  function _requireMinted(uint256 tokenId_) internal view virtual {
+    require(_exists(tokenId_), "ERC3525: invalid token ID");
   }
 
-  function _mintValue(address to_, uint256 slot_, uint256 tokenId_, uint256 value_) internal virtual returns (uint256) {
+  function _mint(address to_, uint256 slot_, uint256 value_) internal virtual returns (uint256) {
+    uint256 tokenId = _createOriginalTokenId();
+    _mint(to_, tokenId, slot_, value_);  
+    return tokenId;
+  }
+
+  function _mint(address to_, uint256 tokenId_, uint256 slot_, uint256 value_) internal virtual {
     require(to_ != address(0), "ERC3525: mint to the zero address");
     require(tokenId_ != 0, "ERC3525: cannot mint zero tokenId");
     require(!_exists(tokenId_), "ERC3525: token already minted");
 
     _beforeValueTransfer(address(0), to_, 0, tokenId_, slot_, value_);
-
-    _mint(to_, tokenId_, slot_);
-    _allTokens[_allTokensIndex[tokenId_]].balance = value_;
-
-    emit TransferValue(0, tokenId_, value_);
-
+    __mintToken(to_, tokenId_, slot_);
+    __mintValue(tokenId_, value_);
     _afterValueTransfer(address(0), to_, 0, tokenId_, slot_, value_);
-
-    return tokenId_;
   }
 
-  function _topupValue(address to_, uint256 slot_, uint256 tokenId_, uint256 value_) internal virtual returns (uint256) {
-    require(to_ != address(0), "ERC3525: top-up to the zero address");
-    require(tokenId_ != 0, "ERC3525: cannot top-up to zero tokenId");
-    require(_exists(tokenId_), "ERC3525: cannot top-up to nonexistent token");
+  function _mintValue(uint256 tokenId_, uint256 value_) internal virtual {
+    _requireMinted(tokenId_);
 
-    _beforeValueTransfer(address(0), to_, 0, tokenId_, slot_, value_);
+    address owner = ERC3525Upgradeable.ownerOf(tokenId_);
+    uint256 slot = ERC3525Upgradeable.slotOf(tokenId_);
+    _beforeValueTransfer(address(0), owner, 0, tokenId_, slot, value_);
+    __mintValue(tokenId_, value_);
+    _afterValueTransfer(address(0), owner, 0, tokenId_, slot, value_);
+  }
 
+  function __mintValue(uint256 tokenId_, uint256 value_) private {
     _allTokens[_allTokensIndex[tokenId_]].balance += value_;
-
     emit TransferValue(0, tokenId_, value_);
-
-    _afterValueTransfer(address(0), to_, 0, tokenId_, slot_, value_);
-
-    return tokenId_;
   }
 
-  function _mint(address to_, uint256 tokenId_, uint256 slot_) private {
+  function __mintToken(address to_, uint256 tokenId_, uint256 slot_) private {
     TokenData memory tokenData = TokenData({
       id: tokenId_,
       slot: slot_,
@@ -359,7 +357,7 @@ abstract contract ERC3525Upgradeable is
   }
 
   function _burn(uint256 tokenId_) internal virtual {
-    require(_exists(tokenId_), "ERC3525: token does not exist");
+    _requireMinted(tokenId_);
 
     TokenData storage tokenData = _allTokens[_allTokensIndex[tokenId_]];
     address owner = tokenData.owner;
@@ -373,10 +371,28 @@ abstract contract ERC3525Upgradeable is
     _removeTokenFromAllTokensEnumeration(tokenId_);
 
     emit TransferValue(tokenId_, 0, value);
-    emit Transfer(owner, address(0), tokenId_);
     emit SlotChanged(tokenId_, slot, 0);
+    emit Transfer(owner, address(0), tokenId_);
 
     _afterValueTransfer(owner, address(0), tokenId_, 0, slot, value);
+  }
+
+  function _burnValue(uint256 tokenId_, uint256 burnValue_) internal virtual {
+    _requireMinted(tokenId_);
+
+    TokenData storage tokenData = _allTokens[_allTokensIndex[tokenId_]];
+    address owner = tokenData.owner;
+    uint256 slot = tokenData.slot;
+    uint256 value = tokenData.balance;
+
+    require(value >= burnValue_, "ERC3525: burn value exceeds balance");
+
+    _beforeValueTransfer(owner, address(0), tokenId_, 0, slot, burnValue_);
+    
+    tokenData.balance -= burnValue_;
+    emit TransferValue(tokenId_, 0, burnValue_);
+    
+    _afterValueTransfer(owner, address(0), tokenId_, 0, slot, burnValue_);
   }
 
   function _addTokenToOwnerEnumeration(address to_, uint256 tokenId_) private {
@@ -436,6 +452,7 @@ abstract contract ERC3525Upgradeable is
     address to_,
     uint256 value_
   ) internal virtual {
+    require(to_ != address(0), "ERC3525: approve value to the zero address");
     if (!_existApproveValue(to_, tokenId_)) {
       _allTokens[_allTokensIndex[tokenId_]].valueApprovals.push(to_);
     }
@@ -468,13 +485,13 @@ abstract contract ERC3525Upgradeable is
     uint256 toTokenId_,
     uint256 value_
   ) internal virtual {
-    require(_exists(fromTokenId_), "ERC3525: transfer from nonexistent token");
-    require(_exists(toTokenId_), "ERC3525: transfer to nonexistent token");
+    require(_exists(fromTokenId_), "ERC3525: transfer from invalid token ID");
+    require(_exists(toTokenId_), "ERC3525: transfer to invalid token ID");
 
     TokenData storage fromTokenData = _allTokens[_allTokensIndex[fromTokenId_]];
     TokenData storage toTokenData = _allTokens[_allTokensIndex[toTokenId_]];
 
-    require(fromTokenData.balance >= value_, "ERC3525: transfer amount exceeds balance");
+    require(fromTokenData.balance >= value_, "ERC3525: insufficient balance for transfer");
     require(fromTokenData.slot == toTokenData.slot, "ERC3525: transfer to token with different slot");
 
     _beforeValueTransfer(
@@ -511,10 +528,13 @@ abstract contract ERC3525Upgradeable is
     address to_,
     uint256 tokenId_
   ) internal virtual {
-    require(ERC3525Upgradeable.ownerOf(tokenId_) == from_, "ERC3525: transfer from incorrect owner");
+    require(ERC3525Upgradeable.ownerOf(tokenId_) == from_, "ERC3525: transfer from invalid owner");
     require(to_ != address(0), "ERC3525: transfer to the zero address");
 
-    _beforeValueTransfer(from_, to_, tokenId_, tokenId_, slotOf(tokenId_), balanceOf(tokenId_));
+    uint256 slot = ERC3525Upgradeable.slotOf(tokenId_);
+    uint256 value = ERC3525Upgradeable.balanceOf(tokenId_);
+
+    _beforeValueTransfer(from_, to_, tokenId_, tokenId_, slot, value);
 
     _approve(address(0), tokenId_);
     _clearApprovedValues(tokenId_);
@@ -524,7 +544,7 @@ abstract contract ERC3525Upgradeable is
 
     emit Transfer(from_, to_, tokenId_);
 
-    _afterValueTransfer(from_, to_, tokenId_, tokenId_, slotOf(tokenId_), balanceOf(tokenId_));
+    _afterValueTransfer(from_, to_, tokenId_, tokenId_, slot, value);
   }
 
   function _safeTransferTokenId(
@@ -546,7 +566,7 @@ abstract contract ERC3525Upgradeable is
     uint256 value_, 
     bytes memory data_
   ) private returns (bool) {
-    address to = ownerOf(toTokenId_);
+    address to = ERC3525Upgradeable.ownerOf(toTokenId_);
     if (to.isContract() && IERC165Upgradeable(to).supportsInterface(type(IERC3525Receiver).interfaceId)) {
       try
         IERC3525Receiver(to).onERC3525Received(_msgSender(), fromTokenId_, toTokenId_, value_, data_) returns (bytes4 retval) {
@@ -567,20 +587,20 @@ abstract contract ERC3525Upgradeable is
   }
 
   /**
-  * @dev Internal function to invoke {IERC721Receiver-onERC721Received} on a target address.
-  * The call is not executed if the target address is not a contract.
-  *
-  * @param from_ address representing the previous owner of the given token ID
-  * @param to_ target address that will receive the tokens
-  * @param tokenId_ uint256 ID of the token to be transferred
-  * @param data_ bytes optional data to send along with the call
-  * @return bool whether the call correctly returned the expected magic value
-  */
+   * @dev Internal function to invoke {IERC721Receiver-onERC721Received} on a target address.
+   * The call is not executed if the target address is not a contract.
+   *
+   * @param from_ address representing the previous owner of the given token ID
+   * @param to_ target address that will receive the tokens
+   * @param tokenId_ uint256 ID of the token to be transferred
+   * @param data_ bytes optional data to send along with the call
+   * @return bool whether the call correctly returned the expected magic value
+   */
   function _checkOnERC721Received(
-      address from_,
-      address to_,
-      uint256 tokenId_,
-      bytes memory data_
+    address from_,
+    address to_,
+    uint256 tokenId_,
+    bytes memory data_
   ) private returns (bool) {
     if (to_.isContract() && IERC165Upgradeable(to_).supportsInterface(type(IERC721ReceiverUpgradeable).interfaceId)) {
       try 
@@ -592,7 +612,7 @@ abstract contract ERC3525Upgradeable is
         } else {
           // solhint-disable-next-line
           assembly {
-              revert(add(32, reason), mload(reason))
+            revert(add(32, reason), mload(reason))
           }
         }
       }
@@ -635,13 +655,13 @@ abstract contract ERC3525Upgradeable is
     return _createDefaultTokenId();
   }
 
-  function _createDefaultTokenId() private returns (uint256) {
-    return ++_tokenId;
+  function _createDefaultTokenId() private view returns (uint256) {
+    return ERC3525Upgradeable.totalSupply() + 1;
   }
 
   /**
-  * @dev This empty reserved space is put in place to allow future versions to add new
-  * variables without shifting down storage in the inheritance chain.
-  */
+   * @dev This empty reserved space is put in place to allow future versions to add new
+   * variables without shifting down storage in the inheritance chain.
+   */
   uint256[42] private __gap;
 }
